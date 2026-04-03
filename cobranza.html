@@ -488,7 +488,10 @@
         <span class="icon">📋</span> Historial
       </button>
     </nav>
-    <div style="padding:12px 10px;border-top:1px solid var(--borde)">
+    <div style="padding:12px 10px 4px;border-top:1px solid var(--borde);display:flex;flex-direction:column;gap:4px">
+      <button class="nav-btn" onclick="abrirModalBackup()" style="width:100%;color:var(--verde);border:1px solid rgba(0,255,136,.25)">
+        <span class="icon">💾</span> Exportar / Importar
+      </button>
       <button class="nav-btn" onclick="cerrarSesion()" style="width:100%;color:var(--rojo);border:1px solid rgba(255,45,85,.25)">
         <span class="icon">🔒</span> Cerrar sesión
       </button>
@@ -755,6 +758,51 @@ Ej:
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="cerrarModal('modal-pago')">Cancelar</button>
       <button class="btn btn-success" onclick="confirmarPago()">✓ Confirmar pago</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL EXPORTAR / IMPORTAR ═══ -->
+<div class="modal-backdrop" id="modal-backup">
+  <div class="modal" style="width:480px">
+    <div class="modal-header">
+      <h3>💾 Exportar / Importar datos</h3>
+      <button class="modal-close" onclick="cerrarModal('modal-backup')">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Exportar -->
+      <div style="margin-bottom:24px">
+        <div style="font-size:.8rem;font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">
+          📤 Exportar
+        </div>
+        <p style="font-size:.875rem;color:var(--textodim);margin-bottom:14px;line-height:1.5">
+          Descarga un archivo <code style="color:var(--morado)">.json</code> con todos tus clientes y pagos. Guárdalo para hacer respaldo o cargarlo en otra computadora.
+        </p>
+        <button class="btn btn-success" onclick="exportarDatos()" style="width:100%">
+          ⬇️ Descargar respaldo
+        </button>
+      </div>
+
+      <div style="border-top:1px solid var(--borde);margin-bottom:24px"></div>
+
+      <!-- Importar -->
+      <div>
+        <div style="font-size:.8rem;font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">
+          📥 Importar
+        </div>
+        <p style="font-size:.875rem;color:var(--textodim);margin-bottom:14px;line-height:1.5">
+          Carga un archivo de respaldo previamente exportado desde esta app. <span style="color:var(--rojo);font-weight:600">⚠️ Esto reemplazará todos los datos actuales.</span>
+        </p>
+        <label for="import-file" style="text-transform:none;font-size:.875rem">Seleccionar archivo de respaldo</label>
+        <input type="file" id="import-file" accept=".json" style="margin-top:6px;background:var(--bg3);border-color:rgba(0,245,255,.2);color:var(--texto)" />
+        <div id="import-info" style="font-size:.8rem;color:var(--textodim);min-height:18px;margin-top:6px"></div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="cerrarModal('modal-backup')">Cancelar</button>
+      <button class="btn btn-primary" onclick="importarDatos()">⬆️ Cargar datos</button>
     </div>
   </div>
 </div>
@@ -1104,6 +1152,86 @@ function marcarPendiente(clienteId) {
   renderCobranza();
   renderDashboard();
 }
+
+/* ═══════════════════════════════════════
+   EXPORTAR / IMPORTAR
+═══════════════════════════════════════ */
+function abrirModalBackup() {
+  document.getElementById('import-file').value = '';
+  document.getElementById('import-info').textContent = '';
+  abrirModal('modal-backup');
+}
+
+function exportarDatos() {
+  const backup = {
+    version:   '1.0',
+    exportado: new Date().toISOString(),
+    clientes,
+    pagos,
+  };
+  const json = JSON.stringify(backup, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const fecha = new Date().toISOString().slice(0,10);
+  const a = document.createElement('a');
+  a.href     = url;
+  a.download = `cobranza-respaldo-${fecha}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importarDatos() {
+  const file = document.getElementById('import-file').files[0];
+  if (!file) { document.getElementById('import-info').textContent = 'Selecciona un archivo primero.'; return; }
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!Array.isArray(data.clientes) || !Array.isArray(data.pagos)) {
+        document.getElementById('import-info').textContent = '❌ Archivo inválido. Usa un respaldo generado por esta app.';
+        return;
+      }
+      if (!confirm(`¿Cargar ${data.clientes.length} cliente(s) y ${data.pagos.length} pago(s)?\n\nEsto reemplazará todos los datos actuales.`)) return;
+      clientes = data.clientes;
+      pagos    = data.pagos;
+      guardar();
+      cerrarModal('modal-backup');
+      renderDashboard();
+      // Confirmación visual en topbar
+      const tb = document.getElementById('page-title');
+      const orig = tb.textContent;
+      tb.textContent = '✅ Datos importados correctamente';
+      setTimeout(() => tb.textContent = orig, 2500);
+    } catch {
+      document.getElementById('import-info').textContent = '❌ Error al leer el archivo. Verifica que sea un respaldo válido.';
+    }
+  };
+  reader.readAsText(file);
+}
+
+// Vista previa del archivo seleccionado
+document.addEventListener('DOMContentLoaded', () => {
+  const fileInput = document.getElementById('import-file');
+  if (fileInput) {
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const data = JSON.parse(e.target.result);
+          const fecha = data.exportado ? new Date(data.exportado).toLocaleDateString('es-MX') : '—';
+          document.getElementById('import-info').innerHTML =
+            `✅ <strong style="color:var(--verde)">${data.clientes?.length || 0} clientes</strong> · <strong style="color:var(--cyan)">${data.pagos?.length || 0} pagos</strong> · Exportado el ${fecha}`;
+        } catch {
+          document.getElementById('import-info').textContent = '❌ Archivo no reconocido.';
+        }
+      };
+      reader.readAsText(file);
+    });
+  }
+});
 
 /* ═══════════════════════════════════════
    RENDER — DASHBOARD
